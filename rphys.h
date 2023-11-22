@@ -121,7 +121,7 @@ typedef enum RPhys_shape_option {
 
 typedef struct RPhys_shape {
     RPhys_shape_option s; /* actual shape */
-    float mass; /* mass of the body / shape (in grams) */
+    float mass; /* mass of the body / shape (in kilograms) */
 
     union {
         RPhys_circle c;
@@ -140,15 +140,15 @@ RPHYSDEF bool RPhys_shapeCollide(RPhys_shape s, RPhys_shape s2);
 RPHYSDEF RPhys_rect RPhys_triangleToRect(vector2* triangle);
 
 #ifdef RSGL_H
-/* creates an RPhys_shape from an RSGL_rect structure */
+/* creates an RPhys_shape from an RSGL_rect structure and mass in kg */
 RPHYSDEF RPhys_shape RPhys_shape_loadRect(RSGL_rect r, float mass);
-/* creates an polygon RPhys_shape using an RSGL_rect structure and a given number of sides */
+/* creates an polygon RPhys_shape using an RSGL_rect structure and a given number of sides and mass in kg */
 RPHYSDEF RPhys_shape RPhys_shape_loadPolygon(RSGL_rect r, u32 sides, float mass);
-/* creates an RPhys_shape from an RSGL_circle structure */
+/* creates an RPhys_shape from an RSGL_circle structure and mass in kg */
 RPHYSDEF RPhys_shape RPhys_shape_loadCircle(RSGL_circle c, float mass);
-/* creates an RPhys_shape from an RSGL_triangle structure */
+/* creates an RPhys_shape from an RSGL_triangle structure and mass in kg */
 RPHYSDEF RPhys_shape RPhys_shape_loadTriangle(RSGL_triangle t, float mass);
-/* creates an RPhys_shape from an RSGL_point structure */
+/* creates an RPhys_shape from an RSGL_point structure and mass in kg */
 RPHYSDEF RPhys_shape RPhys_shape_loadPoint(RSGL_point p, float mass);
 
 /* creates an RSGL_rect from rectangular polygon data of a RPhys_shape */
@@ -232,6 +232,7 @@ void RPhys_run(void) {
     size_t i;
     for (i = 0; i < RPhys_len; i++) {
         RPhys_body* body = RPhys_bodies[i];
+        time_t t = clock() - startTime;
 
         vector2 grav = RPhys_multiplyVector2(RPhys_gravity, (vector2){body->shape.mass, body->shape.mass});
 
@@ -239,8 +240,6 @@ void RPhys_run(void) {
             grav = (vector2){0, 0};
 
         body->force = RPhys_addVector2(body->force, grav);
-
-        time_t t = clock() - startTime;
 
         size_t i2; 
 
@@ -252,8 +251,10 @@ void RPhys_run(void) {
             if (body->index == body2->index || body->floating)
                 continue;
             
-            if (RPhys_shapeCollide(body->shape, body2->shape)) {
-                body->force = RPhys_subtractVector2(body->force, grav);
+            if (RPhys_shapeCollide(body->shape, body2->shape)) {\
+                vector2 norm = RPhys_multiplyVector2(grav, (vector2){-1.0f, -1.0f});
+                norm = RPhys_multiplyVector2(norm, (vector2){2.0f, 2.0f});
+                body->force = RPhys_addVector2(body->force, norm);
                 
                 vector2 grav2 = RPhys_multiplyVector2(RPhys_gravity, (vector2){body->shape.mass - body2->shape.mass, body->shape.mass - body2->shape.mass});
                 collide = true;
@@ -266,9 +267,8 @@ void RPhys_run(void) {
         
         vector2 acceleration = RPhys_body_getAcceleration(body);
         RPhys_multiplyVector2(acceleration, (vector2){t, t});
-
-        if (collide == false)
-            body->velocity = RPhys_addVector2(body->velocity, acceleration);
+        
+        body->velocity = RPhys_addVector2(body->velocity, acceleration);
 
         /* lazy way to do air resistance */
         if (body->floating == false)
@@ -284,11 +284,9 @@ void RPhys_run(void) {
         else 
             body->shape.c.v = RPhys_addVector2(body->shape.c.v, body->velocity);
     
-        if (collide == false)
-            body->force = RPhys_subtractVector2(body->force, grav);
+        body->force = (vector2){0, 0};
+        body->velocity = (vector2){0, 0};
     }
-    
-    startTime = clock();
 }
 
 void RPhys_free(void) {

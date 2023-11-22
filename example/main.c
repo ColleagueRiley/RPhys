@@ -11,7 +11,7 @@ int main() {
 
     RPhys_body bodies[] = {
             {RPhys_shape_loadRect(RSGL_RECT(200, 20, 20, 20), 0.90f), false},
-            {RPhys_shape_loadPolygon(RSGL_RECT(240, 20, 20, 20), 8, 7.1f), false},
+            {RPhys_shape_loadPolygon(RSGL_RECT(240, 20, 20, 20), 8, 9.0f), false},
             {RPhys_shape_loadRect(RSGL_RECT(0, 200, 500, 100), 7.0f), true},
             {RPhys_shape_loadRect(RSGL_RECT(0, 400, 500, 100), 10.0f), true}
     };
