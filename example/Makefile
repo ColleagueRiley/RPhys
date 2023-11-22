@@ -21,11 +21,11 @@ OUTPUT = rphys
 
 all:
 	make RSGL.o
-	gcc test.c -O3 -I../ -I./include $(LIBS) RSGL.o -o $(OUTPUT) 
+	gcc main.c -O3 -I../ -I./include $(LIBS) RSGL.o -o $(OUTPUT) 
 
 debug:
 	make RSGL.o
-	gcc test.c -lGL -g -I../ -I./include $(LIBS) RSGL.o -o $(OUTPUT)
+	gcc main.c -lGL -g -I../ -I./include $(LIBS) RSGL.o -o $(OUTPUT)
 	./$(OUTPUT)
 
 RSGL.o:
