@@ -50,7 +50,7 @@
 #endif
 
 #ifndef RPHYS_MALLOC
-#include <memory.h>
+#include <memory.h> /* use c standard memory handling by default */
 
 #define RPHYS_MALLOC malloc
 #define RPHYS_REALLOC realloc
@@ -92,25 +92,50 @@ typedef struct vector2 {float x, y;};
 #endif
 #endif
 
-typedef struct RPhys_circle {vector2 v; float d;} RPhys_circle;
-typedef struct RPhys_rect {vector2 v; float w, h;} RPhys_rect;
+/*
+************************
+***** RPhys_vector2 ******
+************************
+*/
 
 /* add two 2D vectors */
 RPHYSDEF vector2 RPhys_addVector2(vector2 v1, vector2 v2);
+/* subtract two 2D vectors */
 RPHYSDEF vector2 RPhys_subtractVector2(vector2 v1, vector2 v2);
+/* multiply two 2D vectors */
 RPHYSDEF vector2 RPhys_multiplyVector2(vector2 v1, vector2 v2);
+/* divide two 2D vectors */
 RPHYSDEF vector2 RPhys_divideVector2(vector2 v1, vector2 v2);
+
+/*
+************************
+***** RPhys general ****
+************************
+*/
 
 /* init RPhys (allocations, ect)*/
 RPHYSDEF void RPhys_init(void);
 /* do physics processing for all the bodies */
-void RPhys_run(void);
+RPHYSDEF void RPhys_run(void);
+/* do a step in the physics processing (run by RPhys_run) */
+void RPhys_step(double deltaTime);
 /* free and deinit RPhys data (for you're done using it) */
 RPHYSDEF void RPhys_free(void);
 /* set current gravity (9.8 m/s^2 by default)*/
 RPHYSDEF void RPhys_setGravity(vector2 gravity);
 /* set current air density (1.29 kg m−3 default) */
 RPHYSDEF void RPhys_setAirDensity(float density);
+/* get current time */
+RPHYSDEF double RPhys_time(void);
+
+/*
+************************
+***** RPhys_shape ******
+************************
+*/
+
+typedef struct RPhys_circle {vector2 v; float d;} RPhys_circle;
+typedef struct RPhys_rect {vector2 v; float w, h;} RPhys_rect;
 
 typedef enum RPhys_shape_option {
     RPHYS_CIRCLE, /* so we don't have to handle all 360 points */
@@ -123,7 +148,7 @@ typedef struct RPhys_shape {
     RPhys_shape_option s; /* actual shape */
     float mass; /* mass of the body / shape (in kilograms) */
 
-    union {
+    union { /* shape data */
         RPhys_circle c;
         RPhys_rect r;
         vector2 vertices[RPHYS_MAX_VERTICES];
@@ -132,12 +157,19 @@ typedef struct RPhys_shape {
     size_t vertexCount; /* how many vertices are in the vertices array (if the shape is a polygon) */
 } RPhys_shape;
 
+/* if a circle is colliding with a rect */
 RPHYSDEF bool RPhys_circleCollideRect(RPhys_circle c, RPhys_rect rect);
+/* if two circles are colliding */
 RPHYSDEF bool RPhys_circleCollide(RPhys_circle cir1, RPhys_circle cir2);
+/* if two rectangles are colliding */
 RPHYSDEF bool RPhys_rectCollide(RPhys_rect rect, RPhys_rect rect2);
+/* if two shapes are colliding (any shape) */
 RPHYSDEF bool RPhys_shapeCollide(RPhys_shape s, RPhys_shape s2);
 
+/* convert triangle cords to a rectangle struct */
 RPHYSDEF RPhys_rect RPhys_triangleToRect(vector2* triangle);
+/* convert any shape struct data to a rectangle struct */
+RPHYSDEF RPhys_rect RPhys_shapeRect(RPhys_shape s) ;
 
 #ifdef RSGL_H
 /* creates an RPhys_shape from an RSGL_rect structure and mass in kg */
@@ -195,6 +227,8 @@ RPHYSDEF void RPhys_drawBodies(void);
 
 #ifdef RPHYS_IMPLEMENTATION
 
+#include <time.h>
+
 vector2 RPhys_gravity = {0.0f, 9.8f};
 float RPhys_airDensity = 1.29f;
 
@@ -218,79 +252,125 @@ vector2 RPhys_divideVector2(vector2 v1, vector2 v2) {
 }
 
 void RPhys_init(void) {
-    RPhys_bodies = (RPhys_body**)malloc(sizeof(RPhys_body**) * RPHYS_BODIES_INIT);
+    RPhys_bodies = (RPhys_body**)RPHYS_MALLOC(sizeof(RPhys_body**) * RPHYS_BODIES_INIT);
     
     RPhys_len = 0;
     RPhys_cap = RPHYS_BODIES_INIT;
 }
 
 void RPhys_run(void) {
-    static time_t startTime = 0;
+    static double startTime = 0.0;
+    static double accumulator = 0.0;
+    static double deltaTime = 1.0/60.0/10.0 * 1000;
+
     if (startTime == 0)
-        startTime = clock();
+        startTime = RPhys_time();
+    
+    double time = RPhys_time();
 
-    size_t i;
-    for (i = 0; i < RPhys_len; i++) {
-        RPhys_body* body = RPhys_bodies[i];
-        time_t t = clock() - startTime;
+    accumulator += (time - startTime);
 
-        vector2 grav = RPhys_multiplyVector2(RPhys_gravity, (vector2){body->shape.mass, body->shape.mass});
+    while (accumulator >= deltaTime) {
+        RPhys_step(deltaTime);
+        accumulator -= deltaTime;
+    }
+    
+    startTime = time;
+}
 
-        if (body->floating == true)
-            grav = (vector2){0, 0};
+void RPhys_step(double deltaTime) {
+    vector2 timeVector = {deltaTime / 2.0, deltaTime / 2.0};
 
-        body->force = RPhys_addVector2(body->force, grav);
+    u32 index = 0;
+    for (index = 0; index < RPhys_len; index++) {
+        RPhys_body* body = RPhys_bodies[index];
+        
+        switch (body->shape.s) {
+            case RPHYS_RECT: case RPHYS_RECT_POLYGON:
+                body->shape.r.v = RPhys_addVector2(body->shape.c.v, body->velocity);
+                break;
+            case RPHYS_POLYGON:
+                size_t v;
+                for (v = 0; v < body->shape.vertexCount; v++)
+                    body->shape.vertices[v] = RPhys_addVector2(body->shape.vertices[v], body->velocity);
+                break;
+            case RPHYS_CIRCLE:
+                body->shape.c.v = RPhys_addVector2(body->shape.c.v, body->velocity);
+                break;
+            default: 
+                break;
+        }
 
-        size_t i2; 
+        vector2 correction = {0, 0};
 
-        bool collide = false;
+        size_t i; 
+        for (i = 0; i < RPhys_len; i++) {
+            RPhys_body* body2 = RPhys_bodies[i];
 
-        for (i2 = 0; i2 < RPhys_len; i2++) {
-            RPhys_body* body2 = RPhys_bodies[i2];
-
-            if (body->index == body2->index || body->floating)
+            if (body->index == body2->index || body->floating || RPhys_shapeCollide(body->shape, body2->shape) == false)
                 continue;
             
-            if (RPhys_shapeCollide(body->shape, body2->shape)) {\
-                vector2 norm = RPhys_multiplyVector2(grav, (vector2){-1.0f, -1.0f});
-                norm = RPhys_multiplyVector2(norm, (vector2){2.0f, 2.0f});
+            RPhys_rect r = RPhys_shapeRect(body->shape);
+            RPhys_rect r1 = RPhys_shapeRect(body2->shape);
+            
+            const vector2 size = {r.w, r.h};
+            r = (RPhys_rect){r.v.x + 2, r.v.y + size.y, r.w - 2, 1};
+
+            /* if the object is coliding with something from the bottom */
+            if (RPhys_rectCollide(r1, r)) {
+                for (r.v.y -= size.y; r.h < size.y && !(r1.v.y + r1.h >= r.v.y && r1.v.y <= r.v.y + r.h); r.h++);
+                
+                vector2 norm = RPhys_multiplyVector2(RPhys_gravity, (vector2){0, -(100 + (body2->shape.mass * 100))});
                 body->force = RPhys_addVector2(body->force, norm);
                 
-                vector2 grav2 = RPhys_multiplyVector2(RPhys_gravity, (vector2){body->shape.mass - body2->shape.mass, body->shape.mass - body2->shape.mass});
-                collide = true;
-                if (grav2.x < 0.0f || grav2.y < 0.0f)
-                    continue;
+                correction = (vector2){0.0f, r.h - size.y};
+            
+                if (body2->shape.mass < body->shape.mass)
+                    body2->force = RPhys_addVector2(body2->force, RPhys_gravity);
+                continue;
+            }
+
+            r = (RPhys_rect){r.v.x, r.v.y, r.w, 1};
+            /* if the object is coliding with something from the top */
+            if (RPhys_rectCollide(r1, r)) {
+                for (; r.h < size.y && !(r1.v.y + r1.h >= r.v.y && r1.v.y <= r.v.y + r.h); r.h++);
+
+                correction = (vector2){0.0f, r.h - 0.5};
+            
+                if (body2->shape.mass < body->shape.mass)
+                    body2->velocity.y = (1.0f / RPhys_airDensity) * body->velocity.y * (deltaTime / (1000 / 2.0));
+                continue;
+            }
+
+            /* if the object is coliding with something from the left-side */
+            r = (RPhys_rect){r.v.x - 2, r.v.y - 2, 1, size.y + 2};
+            if (RPhys_rectCollide(r1, r)) {
                 
-                body2->force = RPhys_addVector2(body2->force, grav2);
             }
         }
-        
-        vector2 acceleration = RPhys_body_getAcceleration(body);
-        RPhys_multiplyVector2(acceleration, (vector2){t, t});
-        
-        body->velocity = RPhys_addVector2(body->velocity, acceleration);
 
-        /* lazy way to do air resistance */
-        if (body->floating == false)
-            body->velocity.y = ((RPhys_airDensity * body->shape.mass) / (body->velocity.y)) * 10;
+        float inverseMass = ((body->shape.mass != 0.0f) ? 1.0f / body->shape.mass : 0.0f);
+
+        body->velocity = RPhys_addVector2(body->velocity, (vector2){
+                                                            (body->force.x * inverseMass) * (deltaTime / 2.0), 
+                                                            (body->force.y * inverseMass) * (deltaTime / 2.0)
+                                                        });
         
-        if (body->shape.s == RPHYS_RECT || body->shape.s == RPHYS_RECT_POLYGON)
-            body->shape.r.v = RPhys_addVector2(body->shape.c.v, body->velocity);
-        else if (body->shape.s == RPHYS_POLYGON) {
-            size_t v;
-            for (v = 0; v < body->shape.vertexCount; v++)
-                body->shape.vertices[v] = RPhys_addVector2(body->shape.vertices[v], body->velocity);
+        if (body->floating == false)  {
+            body->velocity.x += RPhys_gravity.x * (deltaTime / (1000 / 2.0));
+            body->velocity.y += RPhys_gravity.y * (deltaTime / (1000 / 2.0));
+            
+            body->velocity.x = RPhys_gravity.x ? ((RPhys_airDensity * body->shape.mass) / (body->velocity.x)) * (deltaTime / (1000 / 2.0)) : body->velocity.x;
+            body->velocity.y = RPhys_gravity.y ? ((RPhys_airDensity * body->shape.mass) / (body->velocity.y)) * (deltaTime / (1000 / 2.0)) : body->velocity.y; 
         }
-        else 
-            body->shape.c.v = RPhys_addVector2(body->shape.c.v, body->velocity);
-    
+        body->velocity = RPhys_addVector2(body->velocity, correction);
+
         body->force = (vector2){0, 0};
-        body->velocity = (vector2){0, 0};
     }
 }
 
 void RPhys_free(void) {
-    free(RPhys_bodies);
+    RPHYS_FREE(RPhys_bodies);
 }
 
 void RPhys_setGravity(vector2 gravity) {
@@ -299,6 +379,50 @@ void RPhys_setGravity(vector2 gravity) {
 
 void RPhys_setAirDensity(float density) {
     RPhys_airDensity = density;
+}
+
+double RPhys_time(void) {
+    static u64 baseTime = 0; 
+    static u64 frequency = 0; 
+
+    if (frequency == 0) {
+        #if defined(_WIN32)
+            QueryPerformanceFrequency((unsigned long long int *) &frequency);
+        #endif
+
+        #if defined(__linux__)
+            struct timespec now;
+            if (clock_gettime(CLOCK_MONOTONIC, &now) == 0)
+                frequency = 1000000000;
+        #endif
+
+        #if defined(__APPLE__)
+            mach_timebase_info_data_t timebase;
+            mach_timebase_info(&timebase);
+            frequency = (timebase.denom * 1e9)/timebase.numer;
+        #endif
+    }
+
+    u64 time = 0;
+
+    #if defined(_WIN32)
+        QueryPerformanceCounter((unsigned long long int *) &time);
+    #endif
+
+    #if defined(__linux__)
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        time = (u64)now.tv_sec*(u64)1000000000 + (u64)now.tv_nsec;
+    #endif
+
+    #if defined(__APPLE__)
+        time = mach_absolute_time();
+    #endif
+
+    if (baseTime == 0)
+        baseTime = time;
+
+    return (double)(time - baseTime)/frequency*1000;
 }
 
 bool RPhys_circleCollide(RPhys_circle cir, RPhys_circle cir2) {
@@ -352,6 +476,16 @@ RPhys_rect RPhys_triangleToRect(vector2* triangle) {
     }
 
     return rect;
+}
+
+RPhys_rect RPhys_shapeRect(RPhys_shape s) {
+    if (s.vertexCount == 3)
+        return RPhys_triangleToRect(s.vertices);
+    
+    if (s.s == RPHYS_RECT || s.s == RPHYS_RECT_POLYGON)
+        return s.r;
+    if (s.s == RPHYS_CIRCLE)
+       (RPhys_rect){s.c.v.x, s.c.v.y, s.c.d, s.c.d};
 }
 
 bool RPhys_shapeCollide(RPhys_shape s, RPhys_shape s2) {
@@ -420,7 +554,7 @@ RPhys_shape RPhys_shape_loadPoint(RSGL_point p, float mass) {
 RSGL_rect RPhys_shape_getRect(RPhys_shape shape) {
     if (shape.s == RPHYS_CIRCLE)
         return (RSGL_rect){shape.c.v.x, shape.c.v.y, shape.c.d, shape.c.d};
-    if (shape.s == RPHYS_RECT)
+    if (shape.s == RPHYS_RECT || shape.s == RPHYS_RECT_POLYGON)
         return (RSGL_rect){shape.r.v.x, shape.r.v.y, shape.r.w, shape.r.h};
     if (shape.vertexCount < 4)
         return (RSGL_rect){0, 0, 0, 0};
@@ -495,7 +629,7 @@ vector2 RPhys_body_getAcceleration(RPhys_body* body) {
 
 void RPhys_addBody(RPhys_body* body) {
     if (RPhys_len >= RPhys_cap) {
-        RPhys_bodies = (RPhys_body**)realloc(RPhys_bodies, sizeof(RPhys_body**) * (RPHYS_BODIES_NEW + RPhys_len));
+        RPhys_bodies = (RPhys_body**)RPHYS_REALLOC(RPhys_bodies, sizeof(RPhys_body**) * (RPHYS_BODIES_NEW + RPhys_len));
         RPhys_len += RPHYS_BODIES_NEW;
     }
 
