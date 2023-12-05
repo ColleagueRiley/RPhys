@@ -21,16 +21,16 @@ OUTPUT = rphys
 
 all:
 	make RSGL.o
-	gcc main.c -O3 -I../ -I./include $(LIBS) RSGL.o -o $(OUTPUT) 
+	gcc main.c -O3 -Wall -I../ -I./include $(LIBS) RSGL.o -o $(OUTPUT) 
 
 debug:
 	make RSGL.o
-	gcc main.c -lGL -g -I../ -I./include $(LIBS) RSGL.o -o $(OUTPUT)
+	gcc main.c -Wall -lGL -g -I../ -I./include $(LIBS) RSGL.o -o $(OUTPUT)
 	./$(OUTPUT)
 
 RSGL.o:
 	cp include/RSGL.h RSGL.c
-	gcc -c RSGL.c -D RSGL_IMPLEMENTATION -D RGFW_NO_JOYSTICK_CODES -I./include/
+	gcc -c RSGL.c -Wall -D RSGL_IMPLEMENTATION -D RGFW_NO_JOYSTICK_CODES -I./include/
 	rm RSGL.c
 
 
