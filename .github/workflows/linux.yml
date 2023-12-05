@@ -17,5 +17,5 @@ jobs:
       run: sudo apt-get update
     - name: apt
       run: sudo apt-get install mesa-common-dev libglx-dev libxcursor-dev   
-    - name: make
+    - name: gcc
       run: gcc example/main.c -DRSGL_IMPLEMENTATION -lX11 -lGLX -lGL -lm
