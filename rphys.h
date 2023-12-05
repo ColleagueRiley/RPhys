@@ -20,7 +20,6 @@
 *
 *
 
-/*
     define args
     (MAKE SURE RPHYS_IMPLEMENTATION is in at least one header or you use -DRSGL_IMPLEMENTATION)
 	#define RPHYS_IMPLEMENTATION - makes it so source code is include
@@ -88,7 +87,7 @@ typedef RSGL_pointF vector2;
 #endif
 
 #ifndef RPHS_VECTOR_DEFINED
-typedef struct vector2 {float x, y;};
+typedef struct vector2 {float x, y;} vector2;
 #endif
 #endif
 
@@ -134,6 +133,15 @@ RPHYSDEF double RPhys_time(void);
 ************************
 */
 
+typedef enum RPhys_material_option {
+    RUBBER = 0,
+    CONCRETE_DRY,
+    ICE,
+    SNOW,
+    COPPER,
+    STEEL
+} RPhys_material_option;
+
 typedef struct RPhys_circle {vector2 v; float d;} RPhys_circle;
 typedef struct RPhys_rect {vector2 v; float w, h;} RPhys_rect;
 
@@ -147,6 +155,7 @@ typedef enum RPhys_shape_option {
 typedef struct RPhys_shape {
     RPhys_shape_option s; /* actual shape */
     float mass; /* mass of the body / shape (in kilograms) */
+    RPhys_material_option material; /* material of the object*/
 
     union { /* shape data */
         RPhys_circle c;
@@ -158,30 +167,33 @@ typedef struct RPhys_shape {
 } RPhys_shape;
 
 /* if a circle is colliding with a rect */
-RPHYSDEF bool RPhys_circleCollideRect(RPhys_circle c, RPhys_rect rect);
+RPHYSDEF u8 RPhys_circleCollideRect(RPhys_circle c, RPhys_rect rect);
 /* if two circles are colliding */
-RPHYSDEF bool RPhys_circleCollide(RPhys_circle cir1, RPhys_circle cir2);
+RPHYSDEF u8 RPhys_circleCollide(RPhys_circle cir1, RPhys_circle cir2);
 /* if two rectangles are colliding */
-RPHYSDEF bool RPhys_rectCollide(RPhys_rect rect, RPhys_rect rect2);
+RPHYSDEF u8 RPhys_rectCollide(RPhys_rect rect, RPhys_rect rect2);
 /* if two shapes are colliding (any shape) */
-RPHYSDEF bool RPhys_shapeCollide(RPhys_shape s, RPhys_shape s2);
+RPHYSDEF u8 RPhys_shapeCollide(RPhys_shape s, RPhys_shape s2);
 
 /* convert triangle cords to a rectangle struct */
 RPHYSDEF RPhys_rect RPhys_triangleToRect(vector2* triangle);
 /* convert any shape struct data to a rectangle struct */
 RPHYSDEF RPhys_rect RPhys_shapeRect(RPhys_shape s) ;
 
+/* get the µ value of two materials */
+RPHYSDEF float RPhys_MuTable(RPhys_material_option mat1, RPhys_material_option mat2);
+
 #ifdef RSGL_H
 /* creates an RPhys_shape from an RSGL_rect structure and mass in kg */
-RPHYSDEF RPhys_shape RPhys_shape_loadRect(RSGL_rect r, float mass);
+RPHYSDEF RPhys_shape RPhys_shape_loadRect(RSGL_rect r, float mass, RPhys_material_option m);
 /* creates an polygon RPhys_shape using an RSGL_rect structure and a given number of sides and mass in kg */
-RPHYSDEF RPhys_shape RPhys_shape_loadPolygon(RSGL_rect r, u32 sides, float mass);
+RPHYSDEF RPhys_shape RPhys_shape_loadPolygon(RSGL_rect r, u32 sides, float mass, RPhys_material_option m);
 /* creates an RPhys_shape from an RSGL_circle structure and mass in kg */
-RPHYSDEF RPhys_shape RPhys_shape_loadCircle(RSGL_circle c, float mass);
+RPHYSDEF RPhys_shape RPhys_shape_loadCircle(RSGL_circle c, float mass, RPhys_material_option m);
 /* creates an RPhys_shape from an RSGL_triangle structure and mass in kg */
-RPHYSDEF RPhys_shape RPhys_shape_loadTriangle(RSGL_triangle t, float mass);
+RPHYSDEF RPhys_shape RPhys_shape_loadTriangle(RSGL_triangle t, float mass, RPhys_material_option m);
 /* creates an RPhys_shape from an RSGL_point structure and mass in kg */
-RPHYSDEF RPhys_shape RPhys_shape_loadPoint(RSGL_point p, float mass);
+RPHYSDEF RPhys_shape RPhys_shape_loadPoint(RSGL_point p, float mass, RPhys_material_option m);
 
 /* creates an RSGL_rect from rectangular polygon data of a RPhys_shape */
 RPHYSDEF RSGL_rect RPhys_shape_getRect(RPhys_shape shape);
@@ -200,11 +212,13 @@ RPHYSDEF RSGL_point RPhys_shape_getPoint(RPhys_shape shape);
 
 typedef struct RPhys_body {
     RPhys_shape shape; /* shape of object */
-    bool floating; /* not affected by gravity */
+    u8 floating; /* not affected by gravity */
 
     vector2 velocity; /* speed of body (in px/s) */
     vector2 force; /* force on body (in newtons) */
     
+    float sFrition;
+
     u16 index; /* index of body (in array) */
 } RPhys_body;
 
@@ -279,7 +293,7 @@ void RPhys_run(void) {
 }
 
 void RPhys_step(double deltaTime) {
-    vector2 timeVector = {deltaTime / 2.0, deltaTime / 2.0};
+    /*vector2 timeVector = {deltaTime / 2.0f, deltaTime / 2.0f};*/
 
     u32 index = 0;
     for (index = 0; index < RPhys_len; index++) {
@@ -297,55 +311,85 @@ void RPhys_step(double deltaTime) {
             case RPHYS_CIRCLE:
                 body->shape.c.v = RPhys_addVector2(body->shape.c.v, body->velocity);
                 break;
-            default: 
-                break;
+            default: break;
         }
-
+        
         vector2 correction = {0, 0};
 
         size_t i; 
         for (i = 0; i < RPhys_len; i++) {
             RPhys_body* body2 = RPhys_bodies[i];
 
-            if (body->index == body2->index || body->floating || RPhys_shapeCollide(body->shape, body2->shape) == false)
+            if (body->index == body2->index || body->floating || RPhys_shapeCollide(body->shape, body2->shape) == false || 
+                (body->velocity.x == 0 && body->velocity.y == 0 && body->force.x == 0 && body->force.y == 0)
+            )
                 continue;
             
-            RPhys_rect r = RPhys_shapeRect(body->shape);
             RPhys_rect r1 = RPhys_shapeRect(body2->shape);
             
-            const vector2 size = {r.w, r.h};
-            r = (RPhys_rect){r.v.x + 2, r.v.y + size.y, r.w - 2, 1};
+            const RPhys_rect rect = RPhys_shapeRect(body->shape);
+            RPhys_rect r = (RPhys_rect){(vector2){rect.v.x + 2, rect.v.y + rect.h}, rect.w - 3, 1};
 
             /* if the object is coliding with something from the bottom */
-            if (RPhys_rectCollide(r1, r)) {
-                for (r.v.y -= size.y; r.h < size.y && !(r1.v.y + r1.h >= r.v.y && r1.v.y <= r.v.y + r.h); r.h++);
+            if (RPhys_rectCollide(r1, r) && (body->velocity.y != 0 || body->force.y != 0)) {
+                for (r.v.y -= rect.h; r.h < rect.h && !(r1.v.y + r1.h >= r.v.y && r1.v.y <= r.v.y + r.h); r.h++);
                 
                 vector2 norm = RPhys_multiplyVector2(RPhys_gravity, (vector2){0, -(100 + (body2->shape.mass * 100))});
-                body->force = RPhys_addVector2(body->force, norm);
+
+
+                float Mu = RPhys_MuTable(body->shape.material, body2->shape.material);
+                float frictionForceX = (Mu* (RPhys_gravity.y * body->shape.mass));
                 
-                correction = (vector2){0.0f, r.h - size.y};
+                if (body->velocity.x && body->velocity.x > body->sFrition) {
+                    body->sFrition = 0;
+                    
+                    if (body->velocity.x > 0.0f)
+                        frictionForceX = -frictionForceX;
+                    
+                    body->velocity.x += frictionForceX * (deltaTime / (1000 / 2.0)); 
+                }
+
+                else
+                    /* the static friction Mu, in this, will just be the kenetic friction Mu * 2*/
+                    body->sFrition = ((Mu * 2) * (RPhys_gravity.y * body->shape.mass));
+                
+                body->force = RPhys_addVector2(body->force, norm);
+
+                correction = (vector2){0.0f, r.h - rect.h};
             
                 if (body2->shape.mass < body->shape.mass)
                     body2->force = RPhys_addVector2(body2->force, RPhys_gravity);
-                continue;
+            } else if (body->velocity.y != 0 || body->force.y != 0) {
+                r = (RPhys_rect){(vector2){rect.v.x + 2, rect.v.y}, rect.w - 2, 1};
+                /* if the object is coliding with something from the top */
+                if (RPhys_rectCollide(r1, r)) {
+                    for (; r.h < rect.h && !(r1.v.y + r1.h >= r.v.y && r1.v.y <= r.v.y + r.h); r.h++);
+                    correction = (vector2){0.0f, r.h - 0.45};
+                    
+                    if (body2->shape.mass < body->shape.mass)
+                        body2->velocity.y = (1.0f / RPhys_airDensity) * body->velocity.y * (deltaTime / (1000 / 2.0));
+                }
             }
-
-            r = (RPhys_rect){r.v.x, r.v.y, r.w, 1};
-            /* if the object is coliding with something from the top */
+            
+            if (body->velocity.x == 0 && body->force.x == 0)
+                continue;
+            
+            /* if the object is coliding with something from the left-side */
+            r = (RPhys_rect){(vector2){rect.v.x, rect.v.y + 5}, 1, rect.h - 6};
             if (RPhys_rectCollide(r1, r)) {
-                for (; r.h < size.y && !(r1.v.y + r1.h >= r.v.y && r1.v.y <= r.v.y + r.h); r.h++);
-
-                correction = (vector2){0.0f, r.h - 0.5};
+                body->velocity.x = body2->velocity.x * (deltaTime / (1000 / 2.0));
             
                 if (body2->shape.mass < body->shape.mass)
-                    body2->velocity.y = (1.0f / RPhys_airDensity) * body->velocity.y * (deltaTime / (1000 / 2.0));
+                    body2->velocity.x = body->velocity.x * (deltaTime / (1000 / 2.0));
                 continue;
             }
-
-            /* if the object is coliding with something from the left-side */
-            r = (RPhys_rect){r.v.x - 2, r.v.y - 2, 1, size.y + 2};
+            
+            r = (RPhys_rect){(vector2){rect.v.x + rect.w, rect.v.y + 3}, 1, rect.h - 6};
             if (RPhys_rectCollide(r1, r)) {
+                body->velocity.x = body2->velocity.x * (deltaTime / (1000 / 2.0));
                 
+                if (body2->shape.mass < body->shape.mass)
+                    body2->velocity.x = -body->velocity.x * (deltaTime / (1000 / 2.0));
             }
         }
 
@@ -356,7 +400,7 @@ void RPhys_step(double deltaTime) {
                                                             (body->force.y * inverseMass) * (deltaTime / 2.0)
                                                         });
         
-        if (body->floating == false)  {
+        if (body->floating == 0)  {
             body->velocity.x += RPhys_gravity.x * (deltaTime / (1000 / 2.0));
             body->velocity.y += RPhys_gravity.y * (deltaTime / (1000 / 2.0));
             
@@ -425,7 +469,7 @@ double RPhys_time(void) {
     return (double)(time - baseTime)/frequency*1000;
 }
 
-bool RPhys_circleCollide(RPhys_circle cir, RPhys_circle cir2) {
+u8 RPhys_circleCollide(RPhys_circle cir, RPhys_circle cir2) {
     float distanceBetweenCircles = (float) sqrtf(
         (cir2.v.x - cir.v.x) * (cir2.v.x - cir.v.x) + 
         (cir2.v.y - cir.v.y) * (cir2.v.y - cir.v.y)
@@ -434,11 +478,11 @@ bool RPhys_circleCollide(RPhys_circle cir, RPhys_circle cir2) {
     return !(distanceBetweenCircles > (cir.d/2) + (cir2.d/2)); /* check if there is a collide */
 }
 
-bool RPhys_rectCollide(RPhys_rect r, RPhys_rect r2) { 
+u8 RPhys_rectCollide(RPhys_rect r, RPhys_rect r2) { 
     return (r.v.x + r.w >= r2.v.x && r.v.x <= r2.v.x + r2.w && r.v.y + r.h >= r2.v.y && r.v.y <= r2.v.y + r2.h); 
 }
 
-bool RPhys_circleCollideRect(RPhys_circle c, RPhys_rect r) {
+u8 RPhys_circleCollideRect(RPhys_circle c, RPhys_rect r) {
     /* test cords */
     float testX = c.v.x; 
     float testY = c.v.y;
@@ -461,7 +505,7 @@ bool RPhys_circleCollideRect(RPhys_circle c, RPhys_rect r) {
 }
 
 RPhys_rect RPhys_triangleToRect(vector2* triangle) {
-    RPhys_rect rect = {-10.1f, -10.1f, 0.0f, 0.0f};
+    RPhys_rect rect = {{-10.1f, -10.1f}, 0.0f, 0.0f};
     
     u8 i;
     for (i = 0; i < 3; i++) {
@@ -485,10 +529,37 @@ RPhys_rect RPhys_shapeRect(RPhys_shape s) {
     if (s.s == RPHYS_RECT || s.s == RPHYS_RECT_POLYGON)
         return s.r;
     if (s.s == RPHYS_CIRCLE)
-       (RPhys_rect){s.c.v.x, s.c.v.y, s.c.d, s.c.d};
+       return (RPhys_rect){(vector2){s.c.v.x, s.c.v.y}, s.c.d, s.c.d};
+
+    return (RPhys_rect){(vector2){0.0f, 0.0f}, 0.0f, 0.0f};
 }
 
-bool RPhys_shapeCollide(RPhys_shape s, RPhys_shape s2) {
+/* 
+typedef enum RPhys_material_option {
+    RUBBER,
+    CONCRETE_DRY,
+    ICE,
+    SNOW,
+    COPPER,
+    STEEL
+} RPhys_material_option;
+
+*/
+
+float RPhys_MuTable(RPhys_material_option mat1, RPhys_material_option mat2) {
+    static float MuTable[] = {
+        0.0115, 0.0100, 0.0089, 0.0003, 0.0039, 0.0005, 
+        0.0100, 0.0080, 0.0004, 0.0065, 0.0070, 0.0067,
+        0.0089, 0.0004, 0.0002, 0.0003, 0.0005, 0.0014,
+        0.0003, 0.0065, 0.0003, 0.0003, 0.0057, 0.0008,
+        0.0039, 0.0070, 0.0005, 0.0057, 0.0002, 0.0053,
+        0.0005, 0.0067, 0.0014, 0.0008, 0.0053, 0.0015,
+    };
+    
+    return MuTable[(mat1 * 6) + mat2];
+}
+
+u8 RPhys_shapeCollide(RPhys_shape s, RPhys_shape s2) {
     if (s.vertexCount == 3) {
         RPhys_rect r1 = RPhys_triangleToRect(s.vertices);
 
@@ -511,32 +582,34 @@ bool RPhys_shapeCollide(RPhys_shape s, RPhys_shape s2) {
        return RPhys_circleCollideRect(s.c, s2.r);
     if (s.s == RPHYS_CIRCLE && s2.s == RPHYS_CIRCLE)
         return RPhys_circleCollide(s.c, s2.c);
+
+    return false;
 }
 
 #ifdef RSGL_H
-RPhys_shape RPhys_shape_loadRect(RSGL_rect r, float mass) {
-    RPhys_shape s = {RPHYS_RECT, mass, {}, 0};
+RPhys_shape RPhys_shape_loadRect(RSGL_rect r, float mass, RPhys_material_option m) {
+    RPhys_shape s = {RPHYS_RECT, mass, m, {}, 0};
     s.r = (RPhys_rect){(vector2){(float)r.x, (float)r.y}, (float)r.w, (float)r.h};
 
     return s;
 }
 
-RPhys_shape RPhys_shape_loadPolygon(RSGL_rect r, u32 sides, float mass) {
-    RPhys_shape s = {RPHYS_RECT_POLYGON, mass, {}, sides};
+RPhys_shape RPhys_shape_loadPolygon(RSGL_rect r, u32 sides, float mass, RPhys_material_option m) {
+    RPhys_shape s = {RPHYS_RECT_POLYGON, mass, m, {}, sides};
     s.r = (RPhys_rect){(vector2){r.x, r.y}, r.w, r.h};
 
     return s;
 }
 
-RPhys_shape RPhys_shape_loadCircle(RSGL_circle c, float mass) {
-    RPhys_shape s = {RPHYS_CIRCLE, mass, {}, 0};
+RPhys_shape RPhys_shape_loadCircle(RSGL_circle c, float mass, RPhys_material_option m) {
+    RPhys_shape s = {RPHYS_CIRCLE, mass, m, {}, 0};
     s.c = (RPhys_circle){(vector2){c.x, c.y}, c.d};
 
     return s;
 }
 
-RPhys_shape RPhys_shape_loadTriangle(RSGL_triangle t, float mass) {
-    RPhys_shape s = {RPHYS_POLYGON, mass, {}, 3};
+RPhys_shape RPhys_shape_loadTriangle(RSGL_triangle t, float mass, RPhys_material_option m) {
+    RPhys_shape s = {RPHYS_POLYGON, mass, m, {}, 3};
     s.vertices[0] = (vector2){t.p1.x, t.p1.y};
     s.vertices[1] = (vector2){t.p2.x, t.p2.y};
     s.vertices[2] = (vector2){t.p3.x, t.p3.y};
@@ -544,8 +617,8 @@ RPhys_shape RPhys_shape_loadTriangle(RSGL_triangle t, float mass) {
     return s;
 }
 
-RPhys_shape RPhys_shape_loadPoint(RSGL_point p, float mass) {
-    RPhys_shape s = {RPHYS_RECT, mass, {}, 1};
+RPhys_shape RPhys_shape_loadPoint(RSGL_point p, float mass, RPhys_material_option m) {
+    RPhys_shape s = {RPHYS_RECT, mass, m, {}, 1};
     s.r = (RPhys_rect){(vector2){p.x, p.y}, 1, 1};
 
     return s;
@@ -637,6 +710,7 @@ void RPhys_addBody(RPhys_body* body) {
 
     body->velocity = (vector2){0, 0};
     body->force = (vector2){0, 0};
+    body->sFrition = 0.0f;
 
     RPhys_bodies[body->index] = body;
 
