@@ -24,9 +24,6 @@ int main() {
 
     u8 running = true;
 
-    u32 font = RSGL_loadFont("DejaVuSansMono.ttf");
-    RSGL_setFont(font);
-
     u8 player = 0;
 
     while (running) {
