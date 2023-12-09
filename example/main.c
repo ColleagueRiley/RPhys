@@ -6,14 +6,18 @@
 #define RPHYS_IMPLEMENTATION
 #include "rphys.h"
 
+void bodyCollideCallback(RPhys_body* body1, RPhys_body* body2) {
+    printf("body %i colliding with %i\n", body1->index, body2->index);
+}
+
 int main() {
     RPhys_init();
 
     RPhys_body bodies[] = {
-            {RPhys_shape_loadRect(RSGL_RECT(200, 20, 20, 20), 0.90f, ICE), false},
-            {RPhys_shape_loadPolygon(RSGL_RECT(240, 20, 20, 20), 8, 9.0f, RUBBER), false},
-            {RPhys_shape_loadRect(RSGL_RECT(0, 200, 500, 100), 7.0f, CONCRETE_DRY), true},
-            {RPhys_shape_loadRect(RSGL_RECT(20, 400, 500, 100), 10.0f, CONCRETE_DRY), true}
+            {RPhys_shape_loadRect(RSGL_RECTF(200, 20, 20, 20), 0.90f, ICE), false},
+            {RPhys_shape_loadPolygon(RSGL_RECTF(240, 20, 20, 20), 8, 9.0f, RUBBER), false},
+            {RPhys_shape_loadRect(RSGL_RECTF(0, 200, 500, 100), 7.0f, CONCRETE_DRY), true},
+            {RPhys_shape_loadRect(RSGL_RECTF(20, 400, 500, 100), 10.0f, CONCRETE_DRY), true}
     };
 
     RPhys_addBodies(bodies, sizeof(bodies) / sizeof(RPhys_body));
@@ -54,7 +58,7 @@ int main() {
         if (RGFW_isPressedI(win, RGFW_Up))
             bodies[player].velocity.y = -2;    
         
-        RPhys_run();
+        RPhys_run(bodyCollideCallback);
 
         RPhys_drawBodies();
 

@@ -112,12 +112,14 @@ RPHYSDEF vector2 RPhys_divideVector2(vector2 v1, vector2 v2);
 ************************
 */
 
+typedef struct RPhys_body RPhys_body; 
+
 /* init RPhys (allocations, ect)*/
 RPHYSDEF void RPhys_init(void);
 /* do physics processing for all the bodies */
-RPHYSDEF void RPhys_run(void);
+RPHYSDEF void RPhys_run(void (*__bodyCollideCallback)(RPhys_body*, RPhys_body*));
 /* do a step in the physics processing (run by RPhys_run) */
-void RPhys_step(double deltaTime);
+void RPhys_step(double deltaTime, void (*)(RPhys_body*, RPhys_body*));
 /* free and deinit RPhys data (for you're done using it) */
 RPHYSDEF void RPhys_free(void);
 /* set current gravity (9.8 m/s^2 by default)*/
@@ -184,10 +186,10 @@ RPHYSDEF RPhys_rect RPhys_shapeRect(RPhys_shape s) ;
 RPHYSDEF float RPhys_MuTable(RPhys_material_option mat1, RPhys_material_option mat2);
 
 #ifdef RSGL_H
-/* creates an RPhys_shape from an RSGL_rect structure and mass in kg */
-RPHYSDEF RPhys_shape RPhys_shape_loadRect(RSGL_rect r, float mass, RPhys_material_option m);
-/* creates an polygon RPhys_shape using an RSGL_rect structure and a given number of sides and mass in kg */
-RPHYSDEF RPhys_shape RPhys_shape_loadPolygon(RSGL_rect r, u32 sides, float mass, RPhys_material_option m);
+/* creates an RPhys_shape from an RSGL_rectF structure and mass in kg */
+RPHYSDEF RPhys_shape RPhys_shape_loadRect(RSGL_rectF r, float mass, RPhys_material_option m);
+/* creates an polygon RPhys_shape using an RSGL_rectF structure and a given number of sides and mass in kg */
+RPHYSDEF RPhys_shape RPhys_shape_loadPolygon(RSGL_rectF r, u32 sides, float mass, RPhys_material_option m);
 /* creates an RPhys_shape from an RSGL_circle structure and mass in kg */
 RPHYSDEF RPhys_shape RPhys_shape_loadCircle(RSGL_circle c, float mass, RPhys_material_option m);
 /* creates an RPhys_shape from an RSGL_triangle structure and mass in kg */
@@ -195,13 +197,13 @@ RPHYSDEF RPhys_shape RPhys_shape_loadTriangle(RSGL_triangle t, float mass, RPhys
 /* creates an RPhys_shape from an RSGL_point structure and mass in kg */
 RPHYSDEF RPhys_shape RPhys_shape_loadPoint(RSGL_point p, float mass, RPhys_material_option m);
 
-/* creates an RSGL_rect from rectangular polygon data of a RPhys_shape */
-RPHYSDEF RSGL_rect RPhys_shape_getRect(RPhys_shape shape);
+/* creates an RSGL_rectF from rectangular polygon data of a RPhys_shape */
+RPHYSDEF RSGL_rectF RPhys_shape_getRect(RPhys_shape shape);
 /* 
-    creates an RSGL_rect from the polygon data of a RPhys_shape 
+    creates an RSGL_rectF from the polygon data of a RPhys_shape 
     (this assumes any type of polygon so this will be slower than using `RPhys_shape_getRect`)
 */
-RPHYSDEF RSGL_rect RPhys_shape_getPolyRect(RPhys_shape shape);
+RPHYSDEF RSGL_rectF RPhys_shape_getPolyRect(RPhys_shape shape);
 /* creates an RSGL_circle from the RPhys_circle structure of a RPhys_shape */
 RPHYSDEF RSGL_circle RPhys_shape_getCircle(RPhys_shape shape);
 /* creates an RSGL_triangle from triangular polygon data of a RPhys_shape */
@@ -272,7 +274,7 @@ void RPhys_init(void) {
     RPhys_cap = RPHYS_BODIES_INIT;
 }
 
-void RPhys_run(void) {
+void RPhys_run(void (*__bodyCollideCallback)(RPhys_body*, RPhys_body*)) {
     static double startTime = 0.0;
     static double accumulator = 0.0;
     static double deltaTime = 1.0/60.0/10.0 * 1000;
@@ -285,14 +287,14 @@ void RPhys_run(void) {
     accumulator += (time - startTime);
 
     while (accumulator >= deltaTime) {
-        RPhys_step(deltaTime);
+        RPhys_step(deltaTime, __bodyCollideCallback);
         accumulator -= deltaTime;
     }
     
     startTime = time;
 }
 
-void RPhys_step(double deltaTime) {
+void RPhys_step(double deltaTime, void (*__bodyCollideCallback)(RPhys_body*, RPhys_body*) ) {
     /*vector2 timeVector = {deltaTime / 2.0f, deltaTime / 2.0f};*/
 
     u32 index = 0;
@@ -329,6 +331,9 @@ void RPhys_step(double deltaTime) {
             
             const RPhys_rect rect = RPhys_shapeRect(body->shape);
             RPhys_rect r = (RPhys_rect){(vector2){rect.v.x + 2, rect.v.y + rect.h}, rect.w - 3, 1};
+
+            if (__bodyCollideCallback != NULL)
+                __bodyCollideCallback(body, body2);
 
             /* if the object is coliding with something from the bottom */
             if (RPhys_rectCollide(r1, r) && (body->velocity.y != 0 || body->force.y != 0)) {
@@ -436,7 +441,7 @@ double RPhys_time(void) {
 
         #if defined(__linux__)
             struct timespec now;
-            if (clock_gettime(CLOCK_MONOTONIC, &now) == 0)
+            if (clock_gettime(1, &now) == 0)
                 frequency = 1000000000;
         #endif
 
@@ -455,7 +460,7 @@ double RPhys_time(void) {
 
     #if defined(__linux__)
         struct timespec now;
-        clock_gettime(CLOCK_MONOTONIC, &now);
+        clock_gettime(1, &now);
         time = (u64)now.tv_sec*(u64)1000000000 + (u64)now.tv_nsec;
     #endif
 
@@ -587,14 +592,14 @@ u8 RPhys_shapeCollide(RPhys_shape s, RPhys_shape s2) {
 }
 
 #ifdef RSGL_H
-RPhys_shape RPhys_shape_loadRect(RSGL_rect r, float mass, RPhys_material_option m) {
+RPhys_shape RPhys_shape_loadRect(RSGL_rectF r, float mass, RPhys_material_option m) {
     RPhys_shape s = {RPHYS_RECT, mass, m, {}, 0};
     s.r = (RPhys_rect){(vector2){(float)r.x, (float)r.y}, (float)r.w, (float)r.h};
 
     return s;
 }
 
-RPhys_shape RPhys_shape_loadPolygon(RSGL_rect r, u32 sides, float mass, RPhys_material_option m) {
+RPhys_shape RPhys_shape_loadPolygon(RSGL_rectF r, u32 sides, float mass, RPhys_material_option m) {
     RPhys_shape s = {RPHYS_RECT_POLYGON, mass, m, {}, sides};
     s.r = (RPhys_rect){(vector2){r.x, r.y}, r.w, r.h};
 
@@ -624,26 +629,26 @@ RPhys_shape RPhys_shape_loadPoint(RSGL_point p, float mass, RPhys_material_optio
     return s;
 }
 
-RSGL_rect RPhys_shape_getRect(RPhys_shape shape) {
+RSGL_rectF RPhys_shape_getRect(RPhys_shape shape) {
     if (shape.s == RPHYS_CIRCLE)
-        return (RSGL_rect){shape.c.v.x, shape.c.v.y, shape.c.d, shape.c.d};
+        return (RSGL_rectF){shape.c.v.x, shape.c.v.y, shape.c.d, shape.c.d};
     if (shape.s == RPHYS_RECT || shape.s == RPHYS_RECT_POLYGON)
-        return (RSGL_rect){shape.r.v.x, shape.r.v.y, shape.r.w, shape.r.h};
+        return (RSGL_rectF){shape.r.v.x, shape.r.v.y, shape.r.w, shape.r.h};
     if (shape.vertexCount < 4)
-        return (RSGL_rect){0, 0, 0, 0};
+        return (RSGL_rectF){0, 0, 0, 0};
 
     RSGL_point p = RPhys_shape_getPoint(shape);
-    return RSGL_RECT(   p.x, p.y, 
+    return RSGL_RECTF(   p.x, p.y, 
                         (shape.vertices[2].x - p.x), 
                         (shape.vertices[2].y - p.y)
                     );
 }
 
-RSGL_rect RPhys_shape_getPolyRect(RPhys_shape shape) {
+RSGL_rectF RPhys_shape_getPolyRect(RPhys_shape shape) {
     if (shape.s == RPHYS_CIRCLE)
-        return (RSGL_rect){shape.c.v.x, shape.c.v.y, shape.c.d, shape.c.d};
+        return (RSGL_rectF){shape.c.v.x, shape.c.v.y, shape.c.d, shape.c.d};
     if (shape.s == RPHYS_RECT_POLYGON)
-        return (RSGL_rect){shape.r.v.x, shape.r.v.y, shape.r.w, shape.r.h};
+        return (RSGL_rectF){shape.r.v.x, shape.r.v.y, shape.r.w, shape.r.h};
     
     RSGL_point p = {-500, -500};
     RSGL_area a = {0, 0};
@@ -663,7 +668,7 @@ RSGL_rect RPhys_shape_getPolyRect(RPhys_shape shape) {
             a.h = shape.vertices[i].y;
     }
 
-    return (RSGL_rect){p.x, p.y, a.w - p.x, a.h - p.x};
+    return (RSGL_rectF){p.x, p.y, a.w - p.x, a.h - p.x};
 }
 
 RSGL_circle RPhys_shape_getCircle(RPhys_shape shape) {
@@ -741,7 +746,7 @@ void RPhys_drawBodies(void) {
 
 
         if (shape.vertexCount == 4 || shape.s == RPHYS_RECT) {
-            RSGL_drawRect(RPhys_shape_getRect(shape), RSGL_RGB(255, 0, 0));
+            RSGL_drawRectF(RPhys_shape_getRect(shape), RSGL_RGB(255, 0, 0));
             continue;         
         }
 
@@ -755,8 +760,8 @@ void RPhys_drawBodies(void) {
             continue;         
         }
 
-        RSGL_rect r = RPhys_shape_getPolyRect(shape);
-        RSGL_drawPolygon(r, (shape.s == RPHYS_RECT_POLYGON) ? shape.vertexCount :shape.vertexCount / 3, RSGL_RGB(255, 0, 0));
+        RSGL_rectF r = RPhys_shape_getPolyRect(shape);
+        RSGL_drawPolygonF(r, (shape.s == RPHYS_RECT_POLYGON) ? shape.vertexCount :shape.vertexCount / 3, RSGL_RGB(255, 0, 0));
     }
 }
 #endif
