@@ -1,7 +1,7 @@
 name: linux
 
 on:
-  push:
+  push:https://github.com/ColleagueRiley/RPhys
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
@@ -17,5 +17,5 @@ jobs:
       run: sudo apt-get update
     - name: apt
       run: sudo apt-get install mesa-common-dev libglx-dev libxcursor-dev   
-    - name: make
-      run: cd example && make debug
+    - name: gcc
+      run: gcc example/main.c -DRSGL_IMPLEMENTATION -lX11 -lGLX -lGL -lm
