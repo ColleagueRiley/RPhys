@@ -126,6 +126,14 @@ RPHYSDEF void RPhys_free(void);
 RPHYSDEF void RPhys_setGravity(vector2 gravity);
 /* set current air density (1.29 kg m−3 default) */
 RPHYSDEF void RPhys_setAirDensity(float density);
+/* 
+  get vector of angled force (force = length of hypotenuse ) 
+
+  |\ (force)
+  | \
+  |-(\ (<- angle)
+*/
+RPHYSDEF vector2 RPhys_angledForce(float force, float angle);
 /* get current time */
 RPHYSDEF double RPhys_time(void);
 
@@ -362,7 +370,7 @@ void RPhys_step(double deltaTime, void (*__bodyCollideCallback)(RPhys_body*, RPh
 
                 correction = (vector2){0.0f, r.h - rect.h};
             
-                if (body2->shape.mass < body->shape.mass)
+                if ((body2->shape.mass * (body2->velocity.y + 1)) < (body->shape.mass * (body->velocity.y + 1)))
                     body2->force = RPhys_addVector2(body2->force, RPhys_gravity);
             } else if (body->velocity.y != 0 || body->force.y != 0) {
                 r = (RPhys_rect){(vector2){rect.v.x + 2, rect.v.y}, rect.w - 2, 1};
@@ -371,8 +379,8 @@ void RPhys_step(double deltaTime, void (*__bodyCollideCallback)(RPhys_body*, RPh
                     for (; r.h < rect.h && !(r1.v.y + r1.h >= r.v.y && r1.v.y <= r.v.y + r.h); r.h++);
                     correction = (vector2){0.0f, r.h - 0.45};
                     
-                    if (body2->shape.mass < body->shape.mass)
-                        body2->velocity.y = (1.0f / RPhys_airDensity) * body->velocity.y * (deltaTime / (1000 / 2.0));
+                    if ((body2->shape.mass * (body2->velocity.y + 1)) < (body->shape.mass * (body->velocity.y + 1)))
+                        body2->velocity.y = (1.0f / RPhys_airDensity) * (body->velocity.y + 1) * (deltaTime / (1000 / 2.0));
                 }
             }
             
@@ -384,7 +392,7 @@ void RPhys_step(double deltaTime, void (*__bodyCollideCallback)(RPhys_body*, RPh
             if (RPhys_rectCollide(r1, r)) {
                 body->velocity.x = body2->velocity.x * (deltaTime / (1000 / 2.0));
             
-                if (body2->shape.mass < body->shape.mass)
+                if ((body2->shape.mass * (body2->velocity.x + 1)) < (body->shape.mass * (body->velocity.x + 1)))
                     body2->velocity.x = body->velocity.x * (deltaTime / (1000 / 2.0));
                 continue;
             }
@@ -393,7 +401,8 @@ void RPhys_step(double deltaTime, void (*__bodyCollideCallback)(RPhys_body*, RPh
             if (RPhys_rectCollide(r1, r)) {
                 body->velocity.x = body2->velocity.x * (deltaTime / (1000 / 2.0));
                 
-                if (body2->shape.mass < body->shape.mass)
+                /* momentum  (p = m * v) */
+                if ((body2->shape.mass * (body2->velocity.x + 1)) < (body->shape.mass * (body->velocity.x + 1)))
                     body2->velocity.x = -body->velocity.x * (deltaTime / (1000 / 2.0));
             }
         }
@@ -428,6 +437,13 @@ void RPhys_setGravity(vector2 gravity) {
 
 void RPhys_setAirDensity(float density) {
     RPhys_airDensity = density;
+}
+
+vector2 RPhys_angledForce(float force, float angle) {
+    return (vector2) {
+        cos(angle) * force,
+        sin(angle) * force 
+    };
 }
 
 double RPhys_time(void) {
