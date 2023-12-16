@@ -245,6 +245,9 @@ RPHYSDEF void RPhys_removeBody(RPhys_body* body);
 #ifdef RSGL_H
 /* draw the bodies in the body array (guesses shape of polygon) */
 RPHYSDEF void RPhys_drawBodies(void);
+RPHYSDEF void RPhys_drawBodiesColors(RSGL_color* colors);
+RPHYSDEF void RPhys_drawBodiesTextures(u32* textures);
+RPHYSDEF void RPhys_drawBodiesPro(RSGL_color* colors, u32* textures);
 #endif
 
 #endif /* ndef RPHYS_H */
@@ -750,34 +753,47 @@ void RPhys_removeBody(RPhys_body* body) {
 }
 
 #ifdef RSGL_H
-void RPhys_drawBodies(void) {
+void RPhys_drawBodies(void) { RPhys_drawBodiesPro(NULL, NULL); }
+
+void RPhys_drawBodiesColors(RSGL_color* colors) { RPhys_drawBodiesPro(colors, (u32*)NULL);  }
+
+void RPhys_drawBodiesTextures(u32* texs){ RPhys_drawBodiesPro((RSGL_color*)NULL, texs); }
+
+void RPhys_drawBodiesPro(RSGL_color* colors, u32* texs) {
     size_t i;
     for (i = 0; i < RPhys_len; i++) {
         RPhys_shape shape = RPhys_bodies[i]->shape;
         
+        RSGL_color c = RSGL_RGB(255, 0, 0);
+        if (colors != NULL)
+            c = colors[i];
+
+        if (texs != NULL && texs[i])
+            RSGL_setTexture(texs[i]);
+
         if (shape.s == RPHYS_CIRCLE) {
-            RSGL_drawCircle(RPhys_shape_getCircle(shape), RSGL_RGB(255, 0 ,0));
+            RSGL_drawCircle(RPhys_shape_getCircle(shape), c);
             continue;
         }
 
 
         if (shape.vertexCount == 4 || shape.s == RPHYS_RECT) {
-            RSGL_drawRectF(RPhys_shape_getRect(shape), RSGL_RGB(255, 0, 0));
+            RSGL_drawRectF(RPhys_shape_getRect(shape), c);
             continue;         
         }
 
         if (shape.vertexCount == 1) {
-            RSGL_drawPoint(RPhys_shape_getPoint(shape), RSGL_RGB(255, 0, 0));
+            RSGL_drawPoint(RPhys_shape_getPoint(shape), c);
             continue;
         }
 
         if (shape.vertexCount == 3) {
-            RSGL_drawTriangle(RPhys_shape_getTriangle(shape), RSGL_RGB(255, 0, 0));
+            RSGL_drawTriangle(RPhys_shape_getTriangle(shape), c);
             continue;         
         }
 
         RSGL_rectF r = RPhys_shape_getPolyRect(shape);
-        RSGL_drawPolygonF(r, (shape.s == RPHYS_RECT_POLYGON) ? shape.vertexCount :shape.vertexCount / 3, RSGL_RGB(255, 0, 0));
+        RSGL_drawPolygonF(r, (shape.s == RPHYS_RECT_POLYGON) ? shape.vertexCount :shape.vertexCount / 3, c);
     }
 }
 #endif
