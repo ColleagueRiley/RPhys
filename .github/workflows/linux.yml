@@ -18,4 +18,4 @@ jobs:
     - name: apt
       run: sudo apt-get install mesa-common-dev libglx-dev libxcursor-dev   
     - name: make
-      run: cd example && make debug
+      run: cd example && make
