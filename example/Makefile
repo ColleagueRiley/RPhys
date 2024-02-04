@@ -1,3 +1,10 @@
+CC = gcc
+NAME = rphys
+
+LIBS := -lopengl32 -lshell32 -lgdi32 -lm
+ifneq (,$(filter $(CC),winegcc x86_64-w64-mingw32-gcc))
+    detected_OS := Windows
+else
 ifeq '$(findstring ;,$(PATH))' ';'
     detected_OS := Windows
 else
@@ -6,33 +13,35 @@ else
     detected_OS := $(patsubst MSYS%,MSYS,$(detected_OS))
     detected_OS := $(patsubst MINGW%,MSYS,$(detected_OS))
 endif
+endif
+
+OUTPUT = $(NAME).exe
 
 ifeq ($(detected_OS),Windows)
 	LIBS := -lopengl32 -lshell32 -lgdi32 -lm
 endif
 ifeq ($(detected_OS),Darwin)        # Mac OS X
 	LIBS := -lm -framework Foundation -framework AppKit -framework OpenGL -framework CoreVideo
+	OUTPUT = NAME
 endif
 ifeq ($(detected_OS),Linux)
-    LIBS := -I./include -lX11 -lGLX -lm
+    LIBS := -I./include -lX11 -lGL -lm 
+	OUTPUT = NAME
 endif
 
-OUTPUT = rphys
-
 all:
-	make RSGL.o
-	gcc main.c -O3 -Wall -I../ -I./include $(LIBS) RSGL.o -o $(OUTPUT) 
+	make RSGL-$(detected_OS).o
+	$(CC) main.c -O3 -Wall -I./include -I.. $(LIBS) RSGL-$(detected_OS).o -o $(OUTPUT) 
 
 debug:
-	make RSGL.o
-	gcc main.c -Wall -lGL -g -I../ -I./include $(LIBS) RSGL.o -o $(OUTPUT)
+	make RSGL-$(detected_OS).o
+	$(CC) main.c RSGL-$(detected_OS).o -Wall -g -I.. -I./include $(LIBS) -o $(OUTPUT)
 	./$(OUTPUT)
 
-RSGL.o:
+RSGL-$(detected_OS).o:
 	cp include/RSGL.h RSGL.c
-	gcc -c RSGL.c -Wall -D RSGL_IMPLEMENTATION -D RGFW_NO_JOYSTICK_CODES -I./include/
+	$(CC) -c -fPIC RSGL.c -Wall -D RSGL_IMPLEMENTATION -D RGFW_NO_JOYSTICK_CODES -I./include/ -o RSGL-$(detected_OS).o
 	rm RSGL.c
-
 
 clean:
 	rm $(OUTPUT)
