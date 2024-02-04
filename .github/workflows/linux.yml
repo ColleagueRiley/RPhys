@@ -1,7 +1,7 @@
 name: linux
 
 on:
-  push:https://github.com/ColleagueRiley/RPhys
+  push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
