@@ -31,7 +31,7 @@ endif
 
 all:
 	make RSGL-$(detected_OS).o
-	$(CC) main.c -O3 -Wall -I./include -I.. $(LIBS) RSGL-$(detected_OS).o -o $(OUTPUT) 
+	$(CC) main.c -O3 -Wall -I./include -I.. -I./include $(LIBS) RSGL-$(detected_OS).o -o $(OUTPUT) 
 
 debug:
 	make RSGL-$(detected_OS).o
